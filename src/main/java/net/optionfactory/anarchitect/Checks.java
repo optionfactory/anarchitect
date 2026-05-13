@@ -132,7 +132,7 @@ public class Checks {
                             events.add(SimpleConditionEvent.violated(method, "missing @Transactional annotation in %s".formatted(method.getFullName())));
                         }
                         if (hasJakarta) {
-                            events.add(SimpleConditionEvent.violated(method, "jakarata @Transactional annotation in %".formatted(method.getFullName())));
+                            events.add(SimpleConditionEvent.violated(method, "jakarata @Transactional annotation in %s".formatted(method.getFullName())));
                         }
                     }
 
