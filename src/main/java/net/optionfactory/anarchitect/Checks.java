@@ -1,6 +1,7 @@
 package net.optionfactory.anarchitect;
 
 import com.tngtech.archunit.core.domain.JavaAnnotation;
+import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaParameterizedType;
 import com.tngtech.archunit.core.domain.JavaType;
@@ -8,6 +9,7 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvent;
 import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.EvaluationResult;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition;
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition;
@@ -196,10 +198,11 @@ public class Checks {
     }
 
     public static ArchRule noCycles(String rootPackage) {
-        return SlicesRuleDefinition
-                .slices().matching("%s.(*)..".formatted(rootPackage))
+        final var inner = SlicesRuleDefinition
+                .slices().matching("%s.(**)".formatted(rootPackage))
                 .should().beFreeOfCycles()
                 .allowEmptyShould(true);
+        return ShortDescriptionPackageCycleRule.shorten(inner);
     }
 
     public static ArchRule controllerEndpointsHaveConsistentTrailingSlashes() {
@@ -215,12 +218,13 @@ public class Checks {
                         if (!method.isMetaAnnotatedWith("org.springframework.web.bind.annotation.RequestMapping")) {
                             return;
                         }
-
                         method.getAnnotations().stream()
                                 .filter(a -> a.getRawType().getName().endsWith("Mapping"))
                                 .flatMap(a -> controllerPaths(a))
                                 .filter(v -> v != null)
                                 .filter(path -> !path.equals("/") && !path.isEmpty())
+                                .filter(path -> !path.endsWith("**"))
+                                .filter(path -> !path.startsWith("/actuator"))
                                 .forEach(path -> {
                                     final var hasTrailingSlash = path.endsWith("/");
                                     final var coll = hasTrailingSlash ? withSlash : withoutSlash;
@@ -239,12 +243,79 @@ public class Checks {
                         if (withSlash.isEmpty() || withoutSlash.isEmpty()) {
                             return;
                         }
-                        withoutSlash.forEach(events::add);
-                        withSlash.forEach(events::add);
+                        final var majority = withoutSlash.size() > withSlash.size() ? withoutSlash : withSlash;
+                        final var minority = withoutSlash.size() > withSlash.size() ? withSlash : withoutSlash;
+                        events.add(SimpleConditionEvent.violated(null, "%s @Controllers use a different trailing slash convention than:".formatted(majority.size())));
+                        minority.forEach(events::add);
                     }
                 })
                 .as("@Controllers endpoints should consistently either all end with a slash or all NOT end with a slash")
                 .allowEmptyShould(true);
+    }
+
+    public static class ShortDescriptionPackageCycleRule implements ArchRule {
+
+        private final ArchRule delegate;
+
+        private ShortDescriptionPackageCycleRule(ArchRule delegate) {
+            this.delegate = delegate;
+        }
+
+        public static ArchRule shorten(ArchRule rule) {
+            return new ShortDescriptionPackageCycleRule(rule);
+        }
+
+        @Override
+        public void check(JavaClasses classes) {
+            final var result = evaluate(classes);
+            if (result.hasViolation()) {
+                throw new AssertionError(result.getFailureReport().toString());
+            }
+        }
+
+        @Override
+        public EvaluationResult evaluate(JavaClasses classes) {
+            final var rawResult = delegate.evaluate(classes);
+            if (!rawResult.hasViolation()) {
+                return rawResult;
+            }
+            final var events = ConditionEvents.Factory.create();
+            rawResult.getFailureReport().getDetails().stream()
+                    .filter(line -> line.startsWith("Cycle detected:"))
+                    .forEach(cycle -> {
+                        int cutoffIndex = cycle.indexOf("1.");
+                        final var shortened = cutoffIndex != -1 ? cycle.substring(0, cutoffIndex) : cycle;
+                        final var clean = shortened.replace(" Slice ", " ").replaceAll("[\\r\\n ]+", " ").trim();
+                        events.add(new SimpleConditionEvent(cycle, false, clean));
+                    });
+            return new EvaluationResult(this, events, rawResult.getPriority());
+        }
+
+        @Override
+        public String getDescription() {
+            return delegate.getDescription();
+        }
+
+        @Override
+        public ArchRule because(String reason) {
+            return new ShortDescriptionPackageCycleRule(delegate.because(reason));
+        }
+
+        @Override
+        public ArchRule as(String newDescription) {
+            return new ShortDescriptionPackageCycleRule(delegate.as(newDescription));
+        }
+
+        @Override
+        public ArchRule allowEmptyShould(boolean allowEmptyShould) {
+            return new ShortDescriptionPackageCycleRule(delegate.allowEmptyShould(allowEmptyShould));
+        }
+
+        @Override
+        public String toString() {
+            return delegate.toString();
+        }
+
     }
 
 }
