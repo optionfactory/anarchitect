@@ -1,7 +1,9 @@
 package net.optionfactory.anarchitect;
 
+import net.optionfactory.anarchitect.deadcode.DeadCodeReachabilityRule;
+import net.optionfactory.anarchitect.deadcode.ReachabilityStrategy;
+import net.optionfactory.anarchitect.cycles.ShortDescriptionPackageCycleRule;
 import com.tngtech.archunit.core.domain.JavaAnnotation;
-import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaParameterizedType;
 import com.tngtech.archunit.core.domain.JavaType;
@@ -9,7 +11,6 @@ import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvent;
 import com.tngtech.archunit.lang.ConditionEvents;
-import com.tngtech.archunit.lang.EvaluationResult;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import com.tngtech.archunit.lang.syntax.ArchRuleDefinition;
 import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition;
@@ -26,16 +27,27 @@ public class Checks {
     public static ArchRule[] makeRules(String ancestorPackage) {
         return new ArchRule[]{
             validatedControllers(),
+            requestBodyIsValid(),
+            controllerEndpointsHaveConsistentTrailingSlashes(),
             facadesAreTransactional(),
             transactionalAnnotatedMethodsArePublic(),
             facadesAreNotInterfaces(),
             facadesCallsPerControllerMethod(),
             facadesShouldNotLeakDetachedEntities(),
-            requestBodyIsValid(),
+            entitiesShouldNotImplementEqualsOrHashCode(),
             localDatesNowWithZoneId(),
             noCycles(ancestorPackage),
-            controllerEndpointsHaveConsistentTrailingSlashes()
+            noDeadCode(ancestorPackage)
         };
+    }
+
+    public static ArchRule entitiesShouldNotImplementEqualsOrHashCode() {
+        return ArchRuleDefinition.noMethods()
+                .that().haveName("equals").and().haveRawParameterTypes(Object.class)
+                .or().haveName("hashCode").and().haveRawParameterTypes(new String[0])
+                .should().beDeclaredInClassesThat().areMetaAnnotatedWith("jakarta.persistence.Entity")
+                .as("Entities should not implement custom equals or hashCode to avoid breaking Hibernate proxy equality and collection state transitions")
+                .allowEmptyShould(true);
     }
 
     public static ArchRule validatedControllers() {
@@ -51,7 +63,7 @@ public class Checks {
         return ArchRuleDefinition.classes()
                 .that().haveSimpleNameContaining("Facade")
                 .should().notBeInterfaces()
-                .as("Facades should be interfaces")
+                .as("Facades should not be interfaces")
                 .allowEmptyShould(true);
     }
 
@@ -66,7 +78,7 @@ public class Checks {
 
                     private void check(JavaMethod method, JavaType type, ConditionEvents events, Set<String> visited) {
                         final var typeName = type.getName();
-                        if (visited.contains(typeName) || isInternalSdk(typeName)) {
+                        if (visited.contains(typeName)) {
                             return;
                         }
                         visited.add(typeName);
@@ -96,13 +108,6 @@ public class Checks {
                         return type instanceof JavaParameterizedType pType ? pType.getActualTypeArguments().stream().anyMatch(this::isEntity) : false;
                     }
 
-                    private boolean isInternalSdk(String typeName) {
-                        return typeName.startsWith("java.")
-                                || typeName.startsWith("javax.")
-                                || typeName.startsWith("jakarta.")
-                                || typeName.startsWith("org.springframework.")
-                                || typeName.startsWith("com.sun.");
-                    }
                 })
                 .allowEmptyShould(true);
     }
@@ -253,69 +258,34 @@ public class Checks {
                 .allowEmptyShould(true);
     }
 
-    public static class ShortDescriptionPackageCycleRule implements ArchRule {
 
-        private final ArchRule delegate;
-
-        private ShortDescriptionPackageCycleRule(ArchRule delegate) {
-            this.delegate = delegate;
-        }
-
-        public static ArchRule shorten(ArchRule rule) {
-            return new ShortDescriptionPackageCycleRule(rule);
-        }
-
-        @Override
-        public void check(JavaClasses classes) {
-            final var result = evaluate(classes);
-            if (result.hasViolation()) {
-                throw new AssertionError(result.getFailureReport().toString());
+    public static ArchRule noDeadCode(String ancestorPackage) {
+        return new DeadCodeReachabilityRule(ancestorPackage, new ReachabilityStrategy() {
+            @Override
+            public boolean isSource(JavaMethod method, String basePackage) {
+                final var owner = method.getOwner();
+                return method.getName().equals("main")
+                        || method.isMetaAnnotatedWith("org.springframework.web.bind.annotation.RequestMapping")
+                        || method.isMetaAnnotatedWith("org.springframework.web.bind.annotation.ExceptionHandler")
+                        || method.isMetaAnnotatedWith("org.springframework.scheduling.annotation.Scheduled")
+                        || owner.isMetaAnnotatedWith("org.springframework.context.annotation.Configuration")
+                        || method.isMetaAnnotatedWith("jakarta.ws.rs.HttpMethod")
+                        || owner.isAssignableTo("org.keycloak.provider.Provider")
+                        || owner.isAssignableTo("org.keycloak.provider.ProviderFactory")
+                        || owner.isAssignableTo("org.keycloak.provider.Spi")
+                        || owner.isMetaAnnotatedWith("jakarta.xml.bind.annotation.XmlRegistry")
+                        || overridesExternalMethod(method, basePackage);
             }
-        }
 
-        @Override
-        public EvaluationResult evaluate(JavaClasses classes) {
-            final var rawResult = delegate.evaluate(classes);
-            if (!rawResult.hasViolation()) {
-                return rawResult;
+            @Override
+            public boolean isSink(JavaMethod method, String basePackage) {
+                final var owner = method.getOwner();
+                return method.isMetaAnnotatedWith("org.springframework.web.service.annotation.HttpExchange")
+                        || owner.isMetaAnnotatedWith("org.springframework.web.service.annotation.HttpExchange")
+                        || owner.isMetaAnnotatedWith("org.springframework.stereotype.Repository");
             }
-            final var events = ConditionEvents.Factory.create();
-            rawResult.getFailureReport().getDetails().stream()
-                    .filter(line -> line.startsWith("Cycle detected:"))
-                    .forEach(cycle -> {
-                        int cutoffIndex = cycle.indexOf("1.");
-                        final var shortened = cutoffIndex != -1 ? cycle.substring(0, cutoffIndex) : cycle;
-                        final var clean = shortened.replace(" Slice ", " ").replaceAll("[\\r\\n ]+", " ").trim();
-                        events.add(new SimpleConditionEvent(cycle, false, clean));
-                    });
-            return new EvaluationResult(this, events, rawResult.getPriority());
-        }
-
-        @Override
-        public String getDescription() {
-            return delegate.getDescription();
-        }
-
-        @Override
-        public ArchRule because(String reason) {
-            return new ShortDescriptionPackageCycleRule(delegate.because(reason));
-        }
-
-        @Override
-        public ArchRule as(String newDescription) {
-            return new ShortDescriptionPackageCycleRule(delegate.as(newDescription));
-        }
-
-        @Override
-        public ArchRule allowEmptyShould(boolean allowEmptyShould) {
-            return new ShortDescriptionPackageCycleRule(delegate.allowEmptyShould(allowEmptyShould));
-        }
-
-        @Override
-        public String toString() {
-            return delegate.toString();
-        }
-
+        });
     }
+
 
 }
