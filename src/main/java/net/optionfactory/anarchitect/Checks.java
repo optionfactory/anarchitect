@@ -24,51 +24,84 @@ import java.util.stream.Stream;
 
 public class Checks {
 
-    public static ArchRule[] makeRules(String ancestorPackage) {
-        return new ArchRule[]{
-            validatedControllers(),
-            requestBodyIsValid(),
-            controllerEndpointsHaveConsistentTrailingSlashes(),
-            facadesAreTransactional(),
-            transactionalAnnotatedMethodsArePublic(),
-            facadesAreNotInterfaces(),
-            facadesCallsPerControllerMethod(),
-            facadesShouldNotLeakDetachedEntities(),
-            entitiesShouldNotImplementEqualsOrHashCode(),
-            localDatesNowWithZoneId(),
-            noCycles(ancestorPackage),
-            noDeadCode(ancestorPackage)
-        };
+    public enum RuleTags {
+        RECOMMENDED, ALL;
     }
 
-    public static ArchRule entitiesShouldNotImplementEqualsOrHashCode() {
-        return ArchRuleDefinition.noMethods()
+    public enum ViolationType {
+        WARNING,
+        FAILURE;
+    }
+
+    public record TaggedRule(ArchRule rule, ViolationType violationType, Set<RuleTags> tags) {
+
+        public static TaggedRule of(ArchRule rule, ViolationType violationType, RuleTags... tags) {
+            return new TaggedRule(rule, violationType, Set.copyOf(List.of(tags)));
+        }
+    }
+
+    public static TaggedRule[] makeRules(String ancestorPackage, Set<RuleTags> configuredTags) {
+        return List.of(
+                controllersAreNotMetaAnnotatedWithValidated(),
+                noMethodValidationPostProcessorBeans(),
+                requestBodyIsValid(),
+                controllerEndpointsHaveConsistentTrailingSlashes(),
+                facadesAreTransactional(),
+                transactionalAnnotatedMethodsArePublic(),
+                facadesAreNotInterfaces(),
+                facadesCallsPerControllerMethod(),
+                facadesShouldNotLeakDetachedEntities(),
+                entitiesShouldNotImplementEqualsOrHashCode(),
+                localDatesNowWithZoneId(),
+                noCycles(ancestorPackage),
+                noDeadCode(ancestorPackage),
+                doubleCheckControllerMethodsReturningString()
+        ).stream()
+                .filter(tr -> tr.tags().stream().anyMatch(t -> configuredTags.contains(t)))
+                .toArray(i -> new TaggedRule[i]);
+    }
+
+    public static TaggedRule entitiesShouldNotImplementEqualsOrHashCode() {
+        final var rule = ArchRuleDefinition.noMethods()
                 .that().haveName("equals").and().haveRawParameterTypes(Object.class)
                 .or().haveName("hashCode").and().haveRawParameterTypes(new String[0])
                 .should().beDeclaredInClassesThat().areMetaAnnotatedWith("jakarta.persistence.Entity")
                 .as("Entities should not implement custom equals or hashCode to avoid breaking Hibernate proxy equality and collection state transitions")
                 .allowEmptyShould(true);
+
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule validatedControllers() {
-        return ArchRuleDefinition.classes()
+    public static TaggedRule noMethodValidationPostProcessorBeans() {
+        final var rule = ArchRuleDefinition.methods()
+                .that().haveRawReturnType("org.springframework.validation.beanvalidation.MethodValidationPostProcessor")
+                .should().notBeAnnotatedWith("org.springframework.context.annotation.Bean")
+                .as("MethodValidationPostProcessor @Bean should not be defined: rely on spring unified method validation instead")
+                .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
+    }
+
+    public static TaggedRule controllersAreNotMetaAnnotatedWithValidated() {
+        final var rule = ArchRuleDefinition.classes()
                 .that().areMetaAnnotatedWith("org.springframework.stereotype.Controller")
                 .and().areNotAnnotations()
-                .should().beMetaAnnotatedWith("org.springframework.validation.annotation.Validated")
-                .as("@Controllers must be annotated with @Validated")
+                .should().notBeMetaAnnotatedWith("org.springframework.validation.annotation.Validated")
+                .as("@Controllers should not be meta-annotated with @Validated: use spring unified method validation instead")
                 .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule facadesAreNotInterfaces() {
-        return ArchRuleDefinition.classes()
+    public static TaggedRule facadesAreNotInterfaces() {
+        final var rule = ArchRuleDefinition.classes()
                 .that().haveSimpleNameContaining("Facade")
                 .should().notBeInterfaces()
                 .as("Facades should not be interfaces")
                 .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule facadesShouldNotLeakDetachedEntities() {
-        return ArchRuleDefinition.methods().that().areDeclaredInClassesThat().haveSimpleNameContaining("Facade")
+    public static TaggedRule facadesShouldNotLeakDetachedEntities() {
+        final var rule = ArchRuleDefinition.methods().that().areDeclaredInClassesThat().haveSimpleNameContaining("Facade")
                 .and().arePublic()
                 .should(new ArchCondition<JavaMethod>("not leak @Entity instances") {
                     @Override
@@ -110,18 +143,20 @@ public class Checks {
 
                 })
                 .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule transactionalAnnotatedMethodsArePublic() {
-        return ArchRuleDefinition.methods()
+    public static TaggedRule transactionalAnnotatedMethodsArePublic() {
+        final var rule = ArchRuleDefinition.methods()
                 .that().areAnnotatedWith("org.springframework.transaction.annotation.Transactional")
                 .or().areAnnotatedWith("jakarta.transaction.Transactional")
                 .should().bePublic()
                 .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule facadesAreTransactional() {
-        return ArchRuleDefinition.methods()
+    public static TaggedRule facadesAreTransactional() {
+        final var rule = ArchRuleDefinition.methods()
                 .that().areDeclaredInClassesThat().haveSimpleNameContaining("Facade")
                 .and().areDeclaredInClassesThat().areNotInterfaces()
                 .and().arePublic()
@@ -145,10 +180,11 @@ public class Checks {
 
                 })
                 .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule facadesCallsPerControllerMethod() {
-        return ArchRuleDefinition
+    public static TaggedRule facadesCallsPerControllerMethod() {
+        final var rule = ArchRuleDefinition
                 .methods().that().areDeclaredInClassesThat().areMetaAnnotatedWith("org.springframework.stereotype.Controller")
                 .should(new ArchCondition<>("be calling at most one Facade method") {
 
@@ -170,10 +206,11 @@ public class Checks {
                 })
                 .as("@Controllers should be calling at most one Facade method to preserve transaction integrity")
                 .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule requestBodyIsValid() {
-        return ArchRuleDefinition
+    public static TaggedRule requestBodyIsValid() {
+        final var rule = ArchRuleDefinition
                 .methods().that().areDeclaredInClassesThat().areMetaAnnotatedWith("org.springframework.stereotype.Controller")
                 .should(new ArchCondition<>("have @Valid on parameters annotated with @RequestBody") {
 
@@ -193,25 +230,29 @@ public class Checks {
                 })
                 .as("@RequestBody parameter should be annotated with @Valid to be validated")
                 .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule localDatesNowWithZoneId() {
-        return ArchRuleDefinition.noClasses()
+    public static TaggedRule localDatesNowWithZoneId() {
+        final var rule = ArchRuleDefinition.noClasses()
                 .should().callMethod(LocalDate.class, "now")
                 .orShould().callMethod(LocalDateTime.class, "now")
-                .as("use LocalDate.now(ZoneId) or LocalDateTime.now(ZoneId) instead of the no args method");
+                .as("use LocalDate.now(ZoneId) or LocalDateTime.now(ZoneId) instead of the no args method")
+                .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
-    public static ArchRule noCycles(String rootPackage) {
+    public static TaggedRule noCycles(String rootPackage) {
         final var inner = SlicesRuleDefinition
                 .slices().matching("%s.(**)".formatted(rootPackage))
                 .should().beFreeOfCycles()
                 .allowEmptyShould(true);
-        return ShortDescriptionPackageCycleRule.shorten(inner);
+        final var rule = ShortDescriptionPackageCycleRule.shorten(inner);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL);
     }
 
-    public static ArchRule controllerEndpointsHaveConsistentTrailingSlashes() {
-        return ArchRuleDefinition
+    public static TaggedRule controllerEndpointsHaveConsistentTrailingSlashes() {
+        final var rule = ArchRuleDefinition
                 .methods().that().areDeclaredInClassesThat().areMetaAnnotatedWith("org.springframework.stereotype.Controller")
                 .should(new ArchCondition<>("have consistent trailing slashes (either all or none end in '/')") {
 
@@ -256,11 +297,11 @@ public class Checks {
                 })
                 .as("@Controllers endpoints should consistently either all end with a slash or all NOT end with a slash")
                 .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL);
     }
 
-
-    public static ArchRule noDeadCode(String ancestorPackage) {
-        return new DeadCodeReachabilityRule(ancestorPackage, new ReachabilityStrategy() {
+    public static TaggedRule noDeadCode(String ancestorPackage) {
+        final var rule = new DeadCodeReachabilityRule(ancestorPackage, new ReachabilityStrategy() {
             @Override
             public boolean isSource(JavaMethod method, String basePackage) {
                 final var owner = method.getOwner();
@@ -285,7 +326,17 @@ public class Checks {
                         || owner.isMetaAnnotatedWith("org.springframework.stereotype.Repository");
             }
         });
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL);
     }
 
+    public static TaggedRule doubleCheckControllerMethodsReturningString() {
+        final var rule = ArchRuleDefinition
+                .methods().that().areDeclaredInClassesThat().areMetaAnnotatedWith("org.springframework.web.bind.annotation.ResponseBody")
+                .or().areMetaAnnotatedWith("org.springframework.web.bind.annotation.ResponseBody")
+                .should().notHaveRawReturnType(String.class)
+                .as("Double check @ResponseBody @Controller methods returning String: they might be serialized as text/plain or application/json depending on how/if the StringHttpMessageConverter is being configured and the negotiated Media Type")
+                .allowEmptyShould(true);
+        return TaggedRule.of(rule, ViolationType.WARNING, RuleTags.ALL, RuleTags.RECOMMENDED);
+    }
 
 }
