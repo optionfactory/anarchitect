@@ -8,7 +8,9 @@
     <packaging>maven-plugin</packaging>
     <description>OptionFactory arch checks plugin</description>
     <url>https://github.com/optionfactory/anarchitect</url>
-
+    <prerequisites>
+        <maven>3.6.3</maven>
+    </prerequisites>
     <licenses>
         <license>
             <name>Simplified BSD License</name>
