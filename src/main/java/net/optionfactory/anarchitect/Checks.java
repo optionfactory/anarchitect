@@ -336,7 +336,7 @@ public class Checks {
                 .should().notHaveRawReturnType(String.class)
                 .as("Double check @ResponseBody @Controller methods returning String: they might be serialized as text/plain or application/json depending on how/if the StringHttpMessageConverter is being configured and the negotiated Media Type")
                 .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.WARNING, RuleTags.ALL, RuleTags.RECOMMENDED);
+        return TaggedRule.of(rule, ViolationType.WARNING, RuleTags.ALL);
     }
 
 }
