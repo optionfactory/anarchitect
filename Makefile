@@ -6,4 +6,4 @@ bump:
 publish-central:
 	mvn clean deploy -Pcentral
 check-updates:
-	mvn -U net.optionfactory:anarchitect-maven-plugin:LATEST:check-updates
+	mvn -U -ntp net.optionfactory:anarchitect-maven-plugin:LATEST:check-updates
