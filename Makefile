@@ -3,7 +3,7 @@ build:
 	mvn clean package
 bump:
 	mvn versions:set -DgenerateBackupPoms=false
-deploy-central:
+publish-central:
 	mvn clean deploy -Pcentral
 check-updates:
 	mvn org.codehaus.mojo:versions-maven-plugin:2.16.2:display-dependency-updates  -Dmaven.version.ignore='.*-.*'
