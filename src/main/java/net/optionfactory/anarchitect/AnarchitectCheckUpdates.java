@@ -78,7 +78,7 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
                         .a(" ")
                         .warning(String.format("%" + maxCurrentLength + "s", artifact.current()))
                         .a(" → ")
-                        .success(String.format("%" + maxLatestLength + "s", artifact.current()))
+                        .success(String.format("%" + maxLatestLength + "s", artifact.latest()))
                         .a(" ")
                         .a(artifact.coords())
                         .a(" ")
