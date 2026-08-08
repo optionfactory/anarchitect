@@ -8,14 +8,12 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.codehaus.mojo.versions.AbstractVersionsUpdaterMojo;
 import org.codehaus.mojo.versions.rewriting.MutableXMLStreamReader;
-
 import javax.inject.Inject;
 import org.codehaus.mojo.versions.utils.ArtifactFactory;
 import org.eclipse.aether.RepositorySystem;
 import org.apache.maven.wagon.Wagon;
 import org.codehaus.mojo.versions.api.recording.ChangeRecorder;
 import java.util.Map;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -44,9 +42,13 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
     @Override
     protected void update(MutableXMLStreamReader pom) throws MojoExecutionException, MojoFailureException {
         try {
+            final var reactorKeys = reactorProjects.stream()
+                    .map(p -> p.getGroupId() + ":" + p.getArtifactId())
+                    .collect(Collectors.toSet());
 
             final var directDependencyKeys = getProject().getDependencies().stream()
                     .map(dep -> dep.getGroupId() + ":" + dep.getArtifactId())
+                    .filter(key -> !reactorKeys.contains(key))
                     .collect(Collectors.toSet());
 
             final var dependencies = getProject().getArtifacts().stream()
@@ -74,7 +76,9 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             for (final var artifact : combined) {
                 final var message = MessageUtils.buffer()
                         .warning("[upgradeable]")
-                        .strong(artifact.type())
+                        .a("[PLG]".equals(artifact.type())
+                                ? MessageUtils.buffer().project(artifact.type()).build()
+                                : MessageUtils.buffer().strong(artifact.type()).build())
                         .a(" ")
                         .warning(String.format("%" + maxCurrentLength + "s", artifact.current()))
                         .a(" → ")
@@ -83,17 +87,14 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
                         .a(artifact.coords())
                         .a(" ")
                         .build();
-
                 getLog().info(message);
             }
-
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to analyze versions programmatically", e);
         }
     }
 
     public record UpgradableArtifact(String type, String coords, String current, String latest) {
-
     }
 
     private List<UpgradableArtifact> analyzeArtifacts(Set<Artifact> artifacts, boolean plugins) throws Exception {
@@ -104,12 +105,15 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             if (currentVersion == null) {
                 continue;
             }
+
             final var candidateUpdates = Arrays.stream(artifactVersions.getNewerVersions(currentVersion.toString(), Optional.empty(), false, false))
                     .filter(version -> version.getQualifier() == null)
                     .toList();
+
             if (candidateUpdates.isEmpty()) {
                 continue;
             }
+
             final var latestVersion = candidateUpdates.getLast();
             final var coords = "%s:%s".formatted(artifact.getGroupId(), artifact.getArtifactId());
             result.add(new UpgradableArtifact(plugins ? "[PLG]" : "[DEP]", coords, currentVersion.toString(), latestVersion.toString()));
