@@ -46,7 +46,7 @@ public class AnarchitectCheck extends AbstractMojo {
         try {
 
             final var classpathUrls = compileClasspathElements.stream().map(AnarchitectCheck::classPathElementToUrl).toArray(i -> new URL[i]);
-            final var projectClassLoader = new URLClassLoader(classpathUrls, originalClassLoader);
+            final var projectClassLoader = new URLClassLoader(classpathUrls, ClassLoader.getPlatformClassLoader());
             Thread.currentThread().setContextClassLoader(projectClassLoader);
 
             log.info("Importing classes from: %s".formatted(outputDirectory.getAbsolutePath()));
