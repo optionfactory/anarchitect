@@ -16,6 +16,7 @@ import net.optionfactory.anarchitect.reports.Reports;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -34,9 +35,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 @Mojo(name = "check-updates", aggregator = true, requiresDependencyResolution = ResolutionScope.TEST)
 public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
-
-    @Parameter(property = "anarchitect.updatesOutputFile", defaultValue = "${session.topLevelProject.build.directory}/anarchitect-updates.json")
-    private File outputFile;
 
     private final Map<String, ArtifactVersions> versionCache = new HashMap<>();
 
@@ -61,7 +59,8 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
                     .map(p -> p.getGroupId() + ":" + p.getArtifactId())
                     .collect(Collectors.toSet());
 
-            final var allUpgradableArtifacts = new ArrayList<UpgradableArtifact>();
+            final var allUpgradablePlugins = new ArrayList<UpgradableArtifact>();
+            final var allUpgradableDependencies = new ArrayList<UpgradableArtifact>();
 
             for (final MavenProject project : reactorProjects) {
                 final String projectCoords = "%s:%s".formatted(project.getGroupId(), project.getArtifactId());
@@ -101,7 +100,8 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
                     continue;
                 }
 
-                allUpgradableArtifacts.addAll(combinedForModule);
+                allUpgradableDependencies.addAll(upgradableDependencies);
+                allUpgradablePlugins.addAll(upgradablePlugins);
 
                 getLog().info("");
                 getLog().info(MessageUtils.buffer().strong(":: " + projectCoords).build());
@@ -134,11 +134,17 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
                     getLog().info(message);
                 }
             }
-
-            Reports.write(JsonMapper.builder().build(), allUpgradableArtifacts, outputFile.toPath());
+            
+            final var targetDir =  session.getTopLevelProject().getBuild().getDirectory();            
+            final var dependenciesFile = new File(targetDir, "anarchitect-dependency-upgrades.json");
+            Reports.write(JsonMapper.builder().build(), allUpgradableDependencies, dependenciesFile.toPath());
             getLog().info("");
-            getLog().info("Exported aggregate updates report to " + outputFile.getAbsolutePath());
-
+            getLog().info("Exported aggregate dependency upgrades report to " + dependenciesFile.getAbsolutePath());
+            
+            final var pluginsFile = new File(targetDir, "anarchitect-plugin-upgrades.json");
+            Reports.write(JsonMapper.builder().build(), allUpgradablePlugins, pluginsFile.toPath());
+            getLog().info("");
+            getLog().info("Exported aggregate plugin upgrades report to " + pluginsFile.getAbsolutePath());
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to analyze versions programmatically", e);
         }

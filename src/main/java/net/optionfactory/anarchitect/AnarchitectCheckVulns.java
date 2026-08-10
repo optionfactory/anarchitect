@@ -1,13 +1,14 @@
 package net.optionfactory.anarchitect;
 
-import net.optionfactory.anarchitect.osv.OsvClient;
 import java.io.File;
+import net.optionfactory.anarchitect.osv.OsvClient;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.optionfactory.anarchitect.osv.OsvClient.ArtifactInfo;
 import net.optionfactory.anarchitect.reports.Reports;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -24,8 +25,8 @@ public class AnarchitectCheckVulns extends AbstractMojo {
     @Parameter(defaultValue = "${reactorProjects}", readonly = true, required = true)
     private List<MavenProject> reactorProjects;
 
-    @Parameter(property = "anarchitect.vulnerabilitiesOutputFile", defaultValue = "${session.topLevelProject.build.directory}/anarchitect-vulns.json")
-    private File outputFile;
+    @Parameter(defaultValue = "${session}", readonly = true, required = true)
+    private MavenSession session;
 
     private final JsonMapper mapper = JsonMapper.builder().build();
 
@@ -105,6 +106,8 @@ public class AnarchitectCheckVulns extends AbstractMojo {
                 return;
             }
 
+            final var targetDir =  session.getTopLevelProject().getBuild().getDirectory();            
+            final var outputFile = new File(targetDir, "anarchitect-vulns.json");           
             Reports.write(mapper, reports, outputFile.toPath());
             getLog().info("");
             getLog().info("Exported vulnerability report to " + outputFile.getAbsolutePath());
