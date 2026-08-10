@@ -138,12 +138,12 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             final var targetDir =  session.getTopLevelProject().getBuild().getDirectory();            
             final var dependenciesFile = new File(targetDir, "anarchitect-dependency-upgrades.json");
             Reports.write(JsonMapper.builder().build(), allUpgradableDependencies, dependenciesFile.toPath());
-            getLog().info("");
-            getLog().info("Exported aggregate dependency upgrades report to " + dependenciesFile.getAbsolutePath());
             
             final var pluginsFile = new File(targetDir, "anarchitect-plugin-upgrades.json");
             Reports.write(JsonMapper.builder().build(), allUpgradablePlugins, pluginsFile.toPath());
+            
             getLog().info("");
+            getLog().info("Exported aggregate dependency upgrades report to " + dependenciesFile.getAbsolutePath());
             getLog().info("Exported aggregate plugin upgrades report to " + pluginsFile.getAbsolutePath());
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to analyze versions programmatically", e);
