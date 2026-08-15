@@ -136,7 +136,7 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             }
             
             final var targetDir =  session.getTopLevelProject().getBuild().getDirectory();            
-            final var dependenciesFile = new File(targetDir, "anarchitect-dependency-upgrades.json");
+            final var dependenciesFile = new File(targetDir, "anarchitect-outdated-dependencies.json");
             Reports.write(JsonMapper.builder().build(), allUpgradableDependencies, dependenciesFile.toPath());
             
             final var pluginsFile = new File(targetDir, "anarchitect-plugin-upgrades.json");
