@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.optionfactory</groupId>
     <artifactId>anarchitect-maven-plugin</artifactId>
-    <version>1.12</version>
+    <version>1.13-SNAPSHOT</version>
     <name>anarchitect-maven-plugin</name>
     <packaging>maven-plugin</packaging>
     <description>OptionFactory arch checks plugin</description>
@@ -63,7 +63,7 @@
         <dependency>
             <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>3.2.1</version>
+            <version>3.2.2</version>
         </dependency>        
 
 
