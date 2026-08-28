@@ -3,6 +3,7 @@ package net.optionfactory.anarchitect;
 import net.optionfactory.anarchitect.deadcode.DeadCodeReachabilityRule;
 import net.optionfactory.anarchitect.deadcode.ReachabilityStrategy;
 import net.optionfactory.anarchitect.cycles.ShortDescriptionPackageCycleRule;
+import net.optionfactory.anarchitect.jsonb.JsonbValueTypesShouldHaveValueEquality;
 import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaParameterizedType;
@@ -52,6 +53,7 @@ public class Checks {
                 facadesCallsPerControllerMethod(),
                 facadesShouldNotLeakDetachedEntities(),
                 entitiesShouldNotImplementEqualsOrHashCode(),
+                jsonbValueTypesImplementValueEquality(),
                 localDatesNowWithZoneId(),
                 noCycles(ancestorPackage),
                 noDeadCode(ancestorPackage),
@@ -69,6 +71,15 @@ public class Checks {
                 .as("Entities should not implement custom equals or hashCode to avoid breaking Hibernate proxy equality and collection state transitions")
                 .allowEmptyShould(true);
 
+        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
+    }
+
+    public static TaggedRule jsonbValueTypesImplementValueEquality() {
+        final var rule = ArchRuleDefinition.fields()
+                .that().areAnnotatedWith("org.hibernate.annotations.JdbcTypeCode")
+                .should(new JsonbValueTypesShouldHaveValueEquality())
+                .as("jsonb-mapped fields should be backed, throughout their value type graph, by types implementing value equality: Hibernate dirty-checks jsonb values by comparing them to a deep copy of the loaded state with equals, so identity-equality types are always dirty, causing spurious UPDATEs and @Version bumps on reads")
+                .allowEmptyShould(true);
         return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
     }
 
