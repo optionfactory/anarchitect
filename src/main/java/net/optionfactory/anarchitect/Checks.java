@@ -1,27 +1,24 @@
 package net.optionfactory.anarchitect;
 
-import net.optionfactory.anarchitect.deadcode.DeadCodeReachabilityRule;
+import net.optionfactory.anarchitect.cycles.CyclesRules;
+import net.optionfactory.anarchitect.crypto.CryptoRules;
+import net.optionfactory.anarchitect.deadcode.DeadCodeRules;
 import net.optionfactory.anarchitect.deadcode.ReachabilityStrategy;
-import net.optionfactory.anarchitect.cycles.ShortDescriptionPackageCycleRule;
-import net.optionfactory.anarchitect.jsonb.JsonbValueTypesShouldHaveValueEquality;
-import com.tngtech.archunit.core.domain.JavaAnnotation;
-import com.tngtech.archunit.core.domain.JavaMethod;
-import com.tngtech.archunit.core.domain.JavaParameterizedType;
-import com.tngtech.archunit.core.domain.JavaType;
-import com.tngtech.archunit.lang.ArchCondition;
+import net.optionfactory.anarchitect.dependencies.DependencyRules;
+import net.optionfactory.anarchitect.determinism.DeterminismRules;
+import net.optionfactory.anarchitect.entities.EntityRules;
+import net.optionfactory.anarchitect.equality.EqualityRules;
+import net.optionfactory.anarchitect.jdk.ObsoleteJdkRules;
+import net.optionfactory.anarchitect.jsonb.JsonbRules;
+import net.optionfactory.anarchitect.logging.LoggingRules;
+import net.optionfactory.anarchitect.transactions.PropagationRules;
+import net.optionfactory.anarchitect.transactions.TransactionRules;
+import net.optionfactory.anarchitect.transactions.TxRequiringReachability;
+import net.optionfactory.anarchitect.validation.ValidationRules;
+import net.optionfactory.anarchitect.web.WebRules;
 import com.tngtech.archunit.lang.ArchRule;
-import com.tngtech.archunit.lang.ConditionEvent;
-import com.tngtech.archunit.lang.ConditionEvents;
-import com.tngtech.archunit.lang.SimpleConditionEvent;
-import com.tngtech.archunit.lang.syntax.ArchRuleDefinition;
-import com.tngtech.archunit.library.dependencies.SlicesRuleDefinition;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Stream;
 
 public class Checks {
 
@@ -42,312 +39,52 @@ public class Checks {
     }
 
     public static TaggedRule[] makeRules(String ancestorPackage, Set<RuleTags> configuredTags) {
+        final var txRequiringReachability = new TxRequiringReachability();
         return List.of(
-                controllersAreNotMetaAnnotatedWithValidated(),
-                noMethodValidationPostProcessorBeans(),
-                requestBodyIsValid(),
-                controllerEndpointsHaveConsistentTrailingSlashes(),
-                facadesAreTransactional(),
-                transactionalAnnotatedMethodsArePublic(),
-                facadesAreNotInterfaces(),
-                facadesCallsPerControllerMethod(),
-                facadesShouldNotLeakDetachedEntities(),
-                entitiesShouldNotImplementEqualsOrHashCode(),
-                jsonbValueTypesImplementValueEquality(),
-                localDatesNowWithZoneId(),
-                noCycles(ancestorPackage),
-                noDeadCode(ancestorPackage),
-                doubleCheckControllerMethodsReturningString()
+                ValidationRules.controllersAreNotMetaAnnotatedWithValidated(),
+                ValidationRules.noMethodValidationPostProcessorBeans(),
+                ValidationRules.requestBodyIsValid(ancestorPackage),
+                ValidationRules.requestBodyTypesShouldDeclareConstraints(ancestorPackage),
+                WebRules.controllerEndpointsHaveConsistentTrailingSlashes(),
+                WebRules.requestMappingShouldDeclareHttpMethod(ancestorPackage),
+                WebRules.requestMappingMethodsShouldBePublic(),
+                WebRules.controllersShouldNotCallRepositories(ancestorPackage),
+                TransactionRules.facadesAreNotInterfaces(),
+                TransactionRules.facadesAreTransactional(ancestorPackage),
+                TransactionRules.transactionalAnnotatedMethodsArePublic(),
+                WebRules.facadesCallsPerControllerMethod(ancestorPackage),
+                EntityRules.facadesShouldNotLeakDetachedEntities(ancestorPackage),
+                EntityRules.controllersDoNotReturnEntities(ancestorPackage),
+                EntityRules.requestParametersShouldNotBindEntities(ancestorPackage),
+                EqualityRules.equalsAndHashCodeAreOverriddenInPairs(),
+                TransactionRules.facadesDoNotCallFacades(ancestorPackage),
+                PropagationRules.persistenceFacadesMustNotDisableTransactions(ancestorPackage, txRequiringReachability),
+                PropagationRules.nonPersistenceFacadesMustDeclareNever(ancestorPackage, txRequiringReachability),
+                PropagationRules.facadeMethodsMustNotDeclareMandatoryOrNested(ancestorPackage),
+                TransactionRules.transactionalMethodsMustNotCallFacades(ancestorPackage),
+                PropagationRules.transactionalEventListenersMustDeclareFallbackExecution(ancestorPackage),
+                TransactionRules.noSelfInvocationOfProxiedMethods(ancestorPackage),
+                TransactionRules.cacheableAndCachePutAreMutuallyExclusive(ancestorPackage),
+                EntityRules.entitiesShouldNotImplementEqualsOrHashCode(),
+                JsonbRules.valueEquality(),
+                EntityRules.oneToManyFieldsShouldDeclareMappedBy(ancestorPackage),
+                EntityRules.toOneAssociationsShouldDeclareFetch(ancestorPackage),
+                DeterminismRules.nowMethodsWithoutZoneOrClock(ancestorPackage),
+                DeterminismRules.noStaticNonThreadSafeDateFormatters(ancestorPackage),
+                DeterminismRules.noLegacyDefaultZoneTimeApis(ancestorPackage),
+                DeterminismRules.stringCaseConversionsShouldSpecifyLocale(ancestorPackage),
+                DeterminismRules.stringOperationsShouldSpecifyCharset(ancestorPackage),
+                DeterminismRules.mutableDateFieldsShouldNotLiveInSingletonBeans(ancestorPackage),
+                CryptoRules.weakDigestApisAreForbidden(ancestorPackage),
+                LoggingRules.standardStreamsShouldNotBeUsedForLogging(ancestorPackage),
+                ObsoleteJdkRules.legacyCollectionsShouldNotBeUsed(ancestorPackage),
+                DependencyRules.apacheCommonsShouldNotBeUsed(ancestorPackage),
+                CyclesRules.noCycles(ancestorPackage),
+                DeadCodeRules.noDeadCode(ancestorPackage),
+                WebRules.doubleCheckControllerMethodsReturningString()
         ).stream()
                 .filter(tr -> tr.tags().stream().anyMatch(t -> configuredTags.contains(t)))
                 .toArray(i -> new TaggedRule[i]);
-    }
-
-    public static TaggedRule entitiesShouldNotImplementEqualsOrHashCode() {
-        final var rule = ArchRuleDefinition.noMethods()
-                .that().haveName("equals").and().haveRawParameterTypes(Object.class)
-                .or().haveName("hashCode").and().haveRawParameterTypes(new String[0])
-                .should().beDeclaredInClassesThat().areMetaAnnotatedWith("jakarta.persistence.Entity")
-                .as("Entities should not implement custom equals or hashCode to avoid breaking Hibernate proxy equality and collection state transitions")
-                .allowEmptyShould(true);
-
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule jsonbValueTypesImplementValueEquality() {
-        final var rule = ArchRuleDefinition.fields()
-                .that().areAnnotatedWith("org.hibernate.annotations.JdbcTypeCode")
-                .should(new JsonbValueTypesShouldHaveValueEquality())
-                .as("jsonb-mapped fields should be backed, throughout their value type graph, by types implementing value equality: Hibernate dirty-checks jsonb values by comparing them to a deep copy of the loaded state with equals, so identity-equality types are always dirty, causing spurious UPDATEs and @Version bumps on reads")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule noMethodValidationPostProcessorBeans() {
-        final var rule = ArchRuleDefinition.methods()
-                .that().haveRawReturnType("org.springframework.validation.beanvalidation.MethodValidationPostProcessor")
-                .should().notBeAnnotatedWith("org.springframework.context.annotation.Bean")
-                .as("MethodValidationPostProcessor @Bean should not be defined: rely on spring unified method validation instead")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule controllersAreNotMetaAnnotatedWithValidated() {
-        final var rule = ArchRuleDefinition.classes()
-                .that().areMetaAnnotatedWith("org.springframework.stereotype.Controller")
-                .and().areNotAnnotations()
-                .should().notBeMetaAnnotatedWith("org.springframework.validation.annotation.Validated")
-                .as("@Controllers should not be meta-annotated with @Validated: use spring unified method validation instead")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule facadesAreNotInterfaces() {
-        final var rule = ArchRuleDefinition.classes()
-                .that().haveSimpleNameContaining("Facade")
-                .should().notBeInterfaces()
-                .as("Facades should not be interfaces")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule facadesShouldNotLeakDetachedEntities() {
-        final var rule = ArchRuleDefinition.methods().that().areDeclaredInClassesThat().haveSimpleNameContaining("Facade")
-                .and().arePublic()
-                .should(new ArchCondition<JavaMethod>("not leak @Entity instances") {
-                    @Override
-                    public void check(JavaMethod method, ConditionEvents events) {
-                        check(method, method.getReturnType(), events, new HashSet<>());
-                    }
-
-                    private void check(JavaMethod method, JavaType type, ConditionEvents events, Set<String> visited) {
-                        final var typeName = type.getName();
-                        if (visited.contains(typeName)) {
-                            return;
-                        }
-                        visited.add(typeName);
-                        if (isEntity(type)) {
-                            events.add(SimpleConditionEvent.violated(method, String.format("Method %s leaks an @Entity: %s", method.getFullName(), typeName)));
-                        }
-                        if (type instanceof JavaParameterizedType ptype) {
-                            for (final var typeArgument : ptype.getActualTypeArguments()) {
-                                check(method, typeArgument, events, visited);
-                            }
-                        }
-                        for (final var field : type.toErasure().getAllFields()) {
-                            final var fieldType = field.getType();
-                            if (isEntity(fieldType) || containsGenericEntity(fieldType)) {
-                                events.add(SimpleConditionEvent.violated(method, String.format("Method %s returns %s which leaks an @Entity via field: %s", method.getFullName(), type.getName(), field.getName())));
-                            }
-                            check(method, fieldType, events, visited);
-                        }
-                    }
-
-                    private boolean isEntity(JavaType type) {
-                        final var erased = type.toErasure();
-                        return erased.isMetaAnnotatedWith("jakarta.persistence.Entity") || erased.isMetaAnnotatedWith("javax.persistence.Entity");
-                    }
-
-                    private boolean containsGenericEntity(JavaType type) {
-                        return type instanceof JavaParameterizedType pType ? pType.getActualTypeArguments().stream().anyMatch(this::isEntity) : false;
-                    }
-
-                })
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule transactionalAnnotatedMethodsArePublic() {
-        final var rule = ArchRuleDefinition.methods()
-                .that().areAnnotatedWith("org.springframework.transaction.annotation.Transactional")
-                .or().areAnnotatedWith("jakarta.transaction.Transactional")
-                .should().bePublic()
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule facadesAreTransactional() {
-        final var rule = ArchRuleDefinition.methods()
-                .that().areDeclaredInClassesThat().haveSimpleNameContaining("Facade")
-                .and().areDeclaredInClassesThat().areNotInterfaces()
-                .and().arePublic()
-                .should(new ArchCondition<>("be annotated with @org.springframework.transaction.annotation.Transactional and not @jakarta.transaction.Transactional") {
-
-                    @Override
-                    public void check(JavaMethod method, ConditionEvents events) {
-                        final var hasSpring = method.isAnnotatedWith("org.springframework.transaction.annotation.Transactional")
-                                || method.getOwner().isAnnotatedWith("org.springframework.transaction.annotation.Transactional");
-
-                        final var hasJakarta = method.isAnnotatedWith("jakarta.transaction.Transactional")
-                                || method.getOwner().isAnnotatedWith("jakarta.transaction.Transactional");
-
-                        if (!hasSpring && !hasJakarta) {
-                            events.add(SimpleConditionEvent.violated(method, "missing @Transactional annotation in %s".formatted(method.getFullName())));
-                        }
-                        if (hasJakarta) {
-                            events.add(SimpleConditionEvent.violated(method, "jakarta @Transactional annotation in %s".formatted(method.getFullName())));
-                        }
-                    }
-
-                })
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule facadesCallsPerControllerMethod() {
-        final var rule = ArchRuleDefinition
-                .methods().that().areDeclaredInClassesThat().areMetaAnnotatedWith("org.springframework.stereotype.Controller")
-                .should(new ArchCondition<>("be calling at most one Facade method") {
-
-                    @Override
-                    public void check(JavaMethod method, ConditionEvents events) {
-                        final var callCount = method.getMethodCallsFromSelf().stream()
-                                .map(call -> call.getTargetOwner())
-                                .filter(targetClass -> targetClass.getSimpleName().contains("Facade"))
-                                .distinct()
-                                .count();
-
-                        if (callCount <= 1) {
-                            return;
-                        }
-                        events.add(SimpleConditionEvent.violated(method,
-                                "Controller %s calls %d different Facades. Orchestration should happen inside a single Facade to maintain transaction boundaries."
-                                        .formatted(method.getFullName(), callCount)));
-                    }
-                })
-                .as("@Controllers should be calling at most one Facade method to preserve transaction integrity")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule requestBodyIsValid() {
-        final var rule = ArchRuleDefinition
-                .methods().that().areDeclaredInClassesThat().areMetaAnnotatedWith("org.springframework.stereotype.Controller")
-                .should(new ArchCondition<>("have @Valid on parameters annotated with @RequestBody") {
-
-                    @Override
-                    public void check(JavaMethod method, ConditionEvents events) {
-                        for (final var param : method.getParameters()) {
-                            final var hasRequestBody = param.isAnnotatedWith("org.springframework.web.bind.annotation.RequestBody");
-                            final var hasValid = param.isAnnotatedWith("jakarta.validation.Valid");
-
-                            if (hasRequestBody && !hasValid) {
-                                String message = String.format("@RequestBody parameter without @Valid in method %s", method.getDescription());
-                                events.add(SimpleConditionEvent.violated(method, message));
-                            }
-                        }
-                    }
-
-                })
-                .as("@RequestBody parameter should be annotated with @Valid to be validated")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule localDatesNowWithZoneId() {
-        final var rule = ArchRuleDefinition.noClasses()
-                .should().callMethod(LocalDate.class, "now")
-                .orShould().callMethod(LocalDateTime.class, "now")
-                .as("use LocalDate.now(ZoneId) or LocalDateTime.now(ZoneId) instead of the no args method")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL, RuleTags.RECOMMENDED);
-    }
-
-    public static TaggedRule noCycles(String rootPackage) {
-        final var inner = SlicesRuleDefinition
-                .slices().matching("%s.(**)".formatted(rootPackage))
-                .should().beFreeOfCycles()
-                .allowEmptyShould(true);
-        final var rule = ShortDescriptionPackageCycleRule.shorten(inner);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL);
-    }
-
-    public static TaggedRule controllerEndpointsHaveConsistentTrailingSlashes() {
-        final var rule = ArchRuleDefinition
-                .methods().that().areDeclaredInClassesThat().areMetaAnnotatedWith("org.springframework.stereotype.Controller")
-                .should(new ArchCondition<>("have consistent trailing slashes (either all or none end in '/')") {
-
-                    private final List<ConditionEvent> withSlash = new ArrayList<>();
-                    private final List<ConditionEvent> withoutSlash = new ArrayList<>();
-
-                    @Override
-                    public void check(JavaMethod method, ConditionEvents events) {
-                        if (!method.isMetaAnnotatedWith("org.springframework.web.bind.annotation.RequestMapping")) {
-                            return;
-                        }
-                        method.getAnnotations().stream()
-                                .filter(a -> a.getRawType().getName().endsWith("Mapping"))
-                                .flatMap(a -> controllerPaths(a))
-                                .filter(v -> v != null)
-                                .filter(path -> !path.equals("/") && !path.isEmpty())
-                                .filter(path -> !path.endsWith("**"))
-                                .filter(path -> !path.startsWith("/actuator"))
-                                .forEach(path -> {
-                                    final var hasTrailingSlash = path.endsWith("/");
-                                    final var coll = hasTrailingSlash ? withSlash : withoutSlash;
-                                    coll.add(SimpleConditionEvent.violated(method, "@Controller path with%s trailing slash: '%s' in %s".formatted(hasTrailingSlash ? "" : "out", path, method.getDescription())));
-                                });
-                    }
-
-                    private Stream<String> controllerPaths(JavaAnnotation<JavaMethod> a) {
-                        final var values = (String[]) a.get("value").orElse(new String[0]);
-                        final var paths = (String[]) a.get("path").orElse(new String[0]);
-                        return Stream.concat(Stream.of(values), Stream.of(paths));
-                    }
-
-                    @Override
-                    public void finish(ConditionEvents events) {
-                        if (withSlash.isEmpty() || withoutSlash.isEmpty()) {
-                            return;
-                        }
-                        final var majority = withoutSlash.size() > withSlash.size() ? withoutSlash : withSlash;
-                        final var minority = withoutSlash.size() > withSlash.size() ? withSlash : withoutSlash;
-                        events.add(SimpleConditionEvent.violated(null, "%s @Controllers use a different trailing slash convention than:".formatted(majority.size())));
-                        minority.forEach(events::add);
-                    }
-                })
-                .as("@Controllers endpoints should consistently either all end with a slash or all NOT end with a slash")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL);
-    }
-
-    public static TaggedRule noDeadCode(String ancestorPackage) {
-        final var rule = new DeadCodeReachabilityRule(ancestorPackage, new ReachabilityStrategy() {
-            @Override
-            public boolean isSource(JavaMethod method, String basePackage) {
-                final var owner = method.getOwner();
-                return method.getName().equals("main")
-                        || method.isMetaAnnotatedWith("org.springframework.web.bind.annotation.RequestMapping")
-                        || method.isMetaAnnotatedWith("org.springframework.web.bind.annotation.ExceptionHandler")
-                        || method.isMetaAnnotatedWith("org.springframework.scheduling.annotation.Scheduled")
-                        || owner.isMetaAnnotatedWith("org.springframework.context.annotation.Configuration")
-                        || method.isMetaAnnotatedWith("jakarta.ws.rs.HttpMethod")
-                        || owner.isAssignableTo("org.keycloak.provider.Provider")
-                        || owner.isAssignableTo("org.keycloak.provider.ProviderFactory")
-                        || owner.isAssignableTo("org.keycloak.provider.Spi")
-                        || owner.isMetaAnnotatedWith("jakarta.xml.bind.annotation.XmlRegistry")
-                        || overridesExternalMethod(method, basePackage);
-            }
-
-            @Override
-            public boolean isSink(JavaMethod method, String basePackage) {
-                final var owner = method.getOwner();
-                return method.isMetaAnnotatedWith("org.springframework.web.service.annotation.HttpExchange")
-                        || owner.isMetaAnnotatedWith("org.springframework.web.service.annotation.HttpExchange")
-                        || owner.isMetaAnnotatedWith("org.springframework.stereotype.Repository");
-            }
-        });
-        return TaggedRule.of(rule, ViolationType.FAILURE, RuleTags.ALL);
-    }
-
-    public static TaggedRule doubleCheckControllerMethodsReturningString() {
-        final var rule = ArchRuleDefinition
-                .methods().that().areDeclaredInClassesThat().areMetaAnnotatedWith("org.springframework.web.bind.annotation.ResponseBody")
-                .or().areMetaAnnotatedWith("org.springframework.web.bind.annotation.ResponseBody")
-                .should().notHaveRawReturnType(String.class)
-                .as("Double check @ResponseBody @Controller methods returning String: they might be serialized as text/plain or application/json depending on how/if the StringHttpMessageConverter is being configured and the negotiated Media Type")
-                .allowEmptyShould(true);
-        return TaggedRule.of(rule, ViolationType.WARNING, RuleTags.ALL);
     }
 
 }

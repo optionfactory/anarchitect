@@ -48,10 +48,19 @@ public class OsvClient {
 
     }
 
+    private static final int BATCH_SIZE = 1000;
+
     public Map<ArtifactInfo, List<String>> queryBatch(List<ArtifactInfo> artifacts) throws IOException, InterruptedException {
         final var result = new HashMap<ArtifactInfo, List<String>>();
+        for (int start = 0; start < artifacts.size(); start += BATCH_SIZE) {
+            queryBatchChunk(artifacts.subList(start, Math.min(start + BATCH_SIZE, artifacts.size())), result);
+        }
+        return result;
+    }
+
+    private void queryBatchChunk(List<ArtifactInfo> artifacts, Map<ArtifactInfo, List<String>> result) throws IOException, InterruptedException {
         if (artifacts.isEmpty()) {
-            return result;
+            return;
         }
 
         final var queries = artifacts.stream()
@@ -62,12 +71,12 @@ public class OsvClient {
                 .uri(URI.create("https://api.osv.dev/v1/querybatch"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(Map.of("queries", queries))))
-                .timeout(Duration.ofSeconds(15))
+                .timeout(Duration.ofSeconds(60))
                 .build();
 
         final var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new IllegalStateException("failed to query osv");
+            throw new IllegalStateException("failed to query osv: status " + response.statusCode());
         }
 
         final var batchResponse = mapper.readValue(response.body(), OsvBatchResponse.class);
@@ -81,6 +90,5 @@ public class OsvClient {
                         .toList());
             }
         }
-        return result;
     }
 }
