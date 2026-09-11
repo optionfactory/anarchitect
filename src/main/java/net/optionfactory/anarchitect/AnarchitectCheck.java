@@ -15,6 +15,7 @@ import java.util.stream.Stream;
 import net.optionfactory.anarchitect.Checks.RuleTags;
 import net.optionfactory.anarchitect.Checks.TaggedRule;
 import net.optionfactory.anarchitect.Checks.ViolationType;
+import net.optionfactory.anarchitect.project.ProjectRules;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -23,6 +24,7 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
+import org.apache.maven.project.MavenProject;
 import org.apache.maven.shared.utils.logging.MessageUtils;
 
 @Mojo(name = "check", defaultPhase = LifecyclePhase.VERIFY, requiresDependencyResolution = ResolutionScope.COMPILE)
@@ -40,6 +42,9 @@ public class AnarchitectCheck extends AbstractMojo {
 
     @Parameter(property = "anarchitect.failOnViolation", defaultValue = "false")
     private boolean failOnViolation;
+
+    @Parameter(defaultValue = "${project}", readonly = true, required = true)
+    private MavenProject project;
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -81,6 +86,15 @@ public class AnarchitectCheck extends AbstractMojo {
                         }
                     }
                 }
+            }
+            final var mapstructViolations = ProjectRules.mapstructUnmappedTargetPolicyViolations(project);
+            log.info("%s: %s".formatted(MessageUtils.buffer().strong("rule").build(), ProjectRules.MAPSTRUCT_UNMAPPED_TARGET_POLICY_DESCRIPTION));
+            if (mapstructViolations.isEmpty()) {
+                log.info(MessageUtils.buffer().success(" ✓ passed").build());
+            }
+            for (final var violation : mapstructViolations) {
+                failureCount++;
+                log.info(MessageUtils.buffer().failure(" ✗ failed: ").a(violation).build());
             }
             if (failOnViolation && failureCount > 0) {
                 throw new MojoFailureException("%s architecture violations detected by anarchitect:check".formatted(failureCount));

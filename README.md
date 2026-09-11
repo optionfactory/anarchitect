@@ -172,10 +172,25 @@ flagged; unidirectional `@OneToMany` mappings are surfaced as a possibly-valid d
 decision to review; and direct use of `org.apache.commons` is discouraged in favor of
 JDK or vetted equivalents (CVE history, attack surface, little value over the modern JDK).
 
+## MapStruct unmapped targets
+
+Besides class-level rules, the goal inspects the POM itself: when the MapStruct
+annotation processor is enabled — a `mapstruct*` artifact in the compiler plugin's
+`annotationProcessorPaths`, or `org.mapstruct:mapstruct-processor` on the compile
+classpath, where javac discovers it — the compiler must pass
+`-Amapstruct.unmappedTargetPolicy=ERROR`, in `compilerArgs/arg`, `compilerArgument`
+or the deprecated `compilerArguments` map form, at plugin or execution level. The
+check reads the effective model, so configuration inherited from a parent POM or
+`pluginManagement` is seen. MapStruct's default policy silently ignores target
+properties the mapper does not map, so renames and new fields go unnoticed until
+runtime; `ERROR` turns that drift into a compile-time failure.
+
 # Organization
 
 Rules live in topic packages under `net.optionfactory.anarchitect` (`transactions`,
 `entities`, `validation`, `determinism`, `web`, `equality`, `crypto`, `logging`, `jdk`,
-`dependencies`, `naming`, ...) and are registered in `Checks.makeRules`. Regression
-tests with bytecode fixtures live in `ChecksTest`; the fixtures reference stub
-annotations in the original package names, so no Spring jars are needed to build.
+`dependencies`, `naming`, ...) and are registered in `Checks.makeRules`; POM-level
+checks live in the `project` package and are evaluated by the goal itself, since they
+inspect the build configuration rather than the classes. Regression tests with
+bytecode fixtures live in `ChecksTest`; the fixtures reference stub annotations in
+the original package names, so no Spring jars are needed to build.
