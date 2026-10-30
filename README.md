@@ -34,7 +34,10 @@ mvn net.optionfactory:anarchitect-maven-plugin:check-vulns
 
 An aggregator goal that audits every resolved artifact of every module — including
 transitives — against the [OSV.dev](https://osv.dev) vulnerability database, batching
-queries and deduplicating artifacts across the reactor. Vulnerable dependencies are
+queries and deduplicating artifacts across the reactor. Artifacts produced by the
+reactor itself are excluded: their coordinates are either unknown to OSV (pointless
+queries) or collide with a published third-party artifact's (false positives, since
+OSV matches on Maven coordinates alone). Vulnerable dependencies are
 reported per module with the CVE identifiers, together with the dependency *trail*
 (the path through which the vulnerable artifact reached the module), which is usually
 the decisive information for deciding whether to exclude, bump or override it.

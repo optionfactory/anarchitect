@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import net.optionfactory.anarchitect.osv.OsvClient.ArtifactInfo;
 import net.optionfactory.anarchitect.reports.Reports;
 import org.apache.maven.execution.MavenSession;
@@ -33,6 +34,13 @@ public class AnarchitectCheckVulns extends AbstractMojo {
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
         try {
+            // reactor modules are resolved as artifacts too: they must not be audited,
+            // as their coordinates either do not exist in osv (pointless queries) or
+            // collide with published third-party artifacts (false positives)
+            final var reactorKeys = reactorProjects.stream()
+                    .map(p -> p.getGroupId() + ":" + p.getArtifactId())
+                    .collect(Collectors.toSet());
+
             final var projectDependencies = new HashMap<String, Map<ArtifactInfo, List<String>>>();
 
             for (final MavenProject project : reactorProjects) {
@@ -40,6 +48,9 @@ public class AnarchitectCheckVulns extends AbstractMojo {
                 final var dependencies = new HashMap<ArtifactInfo, List<String>>();
 
                 for (final var artifact : project.getArtifacts()) {
+                    if (reactorKeys.contains(artifact.getGroupId() + ":" + artifact.getArtifactId())) {
+                        continue;
+                    }
                     if (artifact.getVersion() != null) {
                         final var info = new ArtifactInfo(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
                         final var trail = artifact.getDependencyTrail() != null ? artifact.getDependencyTrail() : List.<String>of();
