@@ -199,6 +199,8 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             return Set.of();
         }
 
+        final var effectiveVersions = effectivePluginManagementVersions(project);
+
         final var result = new HashSet<Artifact>();
         for (final var plugin : originalModel.getBuild().getPluginManagement().getPlugins()) {
             if (plugin.getVersion() == null || plugin.getVersion().isBlank()) {
@@ -207,11 +209,16 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             final String groupId = (plugin.getGroupId() != null && !plugin.getGroupId().isBlank())
                     ? plugin.getGroupId()
                     : "org.apache.maven.plugins";
-
+            // the original model keeps versions as written (${...} included): take the
+            // interpolated version from the effective model, as extractManagedDependencies does
+            final var effectiveVersion = effectiveVersions.get(groupId + ":" + plugin.getArtifactId());
+            if (effectiveVersion == null) {
+                continue;
+            }
             result.add(new DefaultArtifact(
                     groupId,
                     plugin.getArtifactId(),
-                    plugin.getVersion(),
+                    effectiveVersion,
                     null,
                     "maven-plugin",
                     null,
@@ -219,6 +226,25 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             ));
         }
         return result;
+    }
+
+    private Map<String, String> effectivePluginManagementVersions(MavenProject project) {
+        final var build = project.getModel().getBuild();
+        if (build == null
+                || build.getPluginManagement() == null
+                || build.getPluginManagement().getPlugins() == null) {
+            return Map.of();
+        }
+        final var versions = new HashMap<String, String>();
+        for (final var plugin : build.getPluginManagement().getPlugins()) {
+            final String groupId = (plugin.getGroupId() != null && !plugin.getGroupId().isBlank())
+                    ? plugin.getGroupId()
+                    : "org.apache.maven.plugins";
+            if (plugin.getVersion() != null && !plugin.getVersion().isBlank()) {
+                versions.put(groupId + ":" + plugin.getArtifactId(), plugin.getVersion());
+            }
+        }
+        return versions;
     }
 
     private List<UpgradableArtifact> analyzeArtifacts(String projectCoords, Set<Artifact> artifacts, String kind, boolean isPlugin) throws Exception {
