@@ -47,6 +47,11 @@ A consolidated `anarchitect-vulnerabilities.json` is exported to the top-level
 *SAST-adjacent* report: it tells you what is on your classpath and vulnerable, not
 whether your code exercises the vulnerable paths.
 
+Next to it, `anarchitect-dependencies.json` lists every artifact the goal queried, one
+entry per (module, artifact) with its version and trail, so that a later check against
+OSV (new advisories for the same dependencies) can be made without resolving the
+project again.
+
 # The check goal
 
 ```console

@@ -3,6 +3,7 @@ package net.optionfactory.anarchitect;
 import java.io.File;
 import net.optionfactory.anarchitect.osv.OsvClient;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -114,6 +115,12 @@ public class AnarchitectCheckVulns extends AbstractMojo {
             final var targetDir =  session.getTopLevelProject().getBuild().getDirectory();
             final var outputFile = new File(targetDir, "anarchitect-vulnerabilities.json");
             Reports.write(mapper, reports, outputFile.toPath());
+            final var audited = projectDependencies.entrySet().stream()
+                    .flatMap(module -> module.getValue().entrySet().stream()
+                            .map(dep -> new AuditedDependency(module.getKey(), dep.getKey().coords(), dep.getKey().version(), dep.getValue())))
+                    .sorted(Comparator.comparing(AuditedDependency::project).thenComparing(AuditedDependency::artifact))
+                    .toList();
+            Reports.write(mapper, audited, new File(targetDir, "anarchitect-dependencies.json").toPath());
             if (reports.isEmpty()) {
                 getLog().info(" ✓ No known vulnerabilities found in project dependencies.");
             } else {
@@ -126,5 +133,10 @@ public class AnarchitectCheckVulns extends AbstractMojo {
     }
 
     public record VulnerabilityReport(String project, String artifact, String version, String vuln_id, List<String> trail) {
+    }
+
+    /// Every dependency the audit queried OSV for, so that a later check against OSV can be made without resolving the
+    /// project again.
+    public record AuditedDependency(String project, String artifact, String version, List<String> trail) {
     }
 }
