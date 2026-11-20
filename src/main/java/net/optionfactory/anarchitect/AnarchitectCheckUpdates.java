@@ -6,9 +6,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.inject.Inject;
@@ -16,6 +19,7 @@ import net.optionfactory.anarchitect.reports.Reports;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.artifact.versioning.ArtifactVersion;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -33,6 +37,9 @@ import tools.jackson.databind.json.JsonMapper;
 
 @Mojo(name = "check-updates", aggregator = true, requiresDependencyResolution = ResolutionScope.TEST)
 public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
+
+    private static final Set<String> PRE_RELEASE_MARKERS = Set.of("alpha", "a", "beta", "b", "milestone", "m", "rc", "cr", "snapshot", "preview", "ea", "dev");
+    private static final Pattern PROPERTY_REFERENCE = Pattern.compile("\\$\\{([^}]+)\\}");
 
     private final Map<String, ArtifactVersions> versionCache = new HashMap<>();
 
@@ -79,6 +86,7 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
 
                 final var allDeps = new HashSet<Artifact>();
                 allDeps.addAll(managedDeps);
+                allDeps.addAll(extractImportedBoms(project, reactorKeys));
                 allDeps.addAll(directDeps);
 
                 final var managedPlugins = extractManagedPlugins(project);
@@ -262,7 +270,7 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             }
 
             final var candidateUpdates = Arrays.stream(artifactVersions.getNewerVersions(currentVersion.toString(), Optional.empty(), false, false))
-                    .filter(version -> version.getQualifier() == null)
+                    .filter(version -> !isPreRelease(version))
                     .toList();
 
             if (candidateUpdates.isEmpty()) {
@@ -272,6 +280,39 @@ public class AnarchitectCheckUpdates extends AbstractVersionsUpdaterMojo {
             final var latestVersion = candidateUpdates.getLast();
             final var coords = "%s:%s".formatted(artifact.getGroupId(), artifact.getArtifactId());
             result.add(new UpgradableArtifact(projectCoords, kind, coords, currentVersion.toString(), latestVersion.toString()));
+        }
+        return result;
+    }
+
+    /// Whether the version is an alpha, beta, milestone, release candidate, snapshot, preview, early
+    /// access or dev build. Release qualifiers (`7.4.16.Final`, `3.1.7.RELEASE`, `33.5.0-jre`) and
+    /// versions with more than three numeric segments (`2.12.7.1`) are releases, although maven
+    /// parses all of them as qualified.
+    static boolean isPreRelease(ArtifactVersion version) {
+        return Stream.of(version.toString().toLowerCase(Locale.ROOT).split("[-.]|(?<=\\d)(?=\\D)|(?<=\\D)(?=\\d)"))
+                .anyMatch(PRE_RELEASE_MARKERS::contains);
+    }
+
+    /// The BOMs imported by the `dependencyManagement` the project itself declares. Maven replaces an
+    /// import with the BOM's contents in the effective model, so the BOM is found in the original
+    /// model only, with its version resolved against the project properties.
+    static Set<Artifact> extractImportedBoms(MavenProject project, Set<String> reactorKeys) {
+        final var originalModel = project.getOriginalModel();
+        if (originalModel == null || originalModel.getDependencyManagement() == null) {
+            return Set.of();
+        }
+        final var properties = project.getProperties();
+        final var result = new HashSet<Artifact>();
+        for (final var dep : originalModel.getDependencyManagement().getDependencies()) {
+            if (!"import".equals(dep.getScope()) || dep.getVersion() == null || reactorKeys.contains(dep.getGroupId() + ":" + dep.getArtifactId())) {
+                continue;
+            }
+            final var version = PROPERTY_REFERENCE.matcher(dep.getVersion())
+                    .replaceAll(m -> Matcher.quoteReplacement(properties.getProperty(m.group(1), m.group())));
+            if (version.contains("${")) {
+                continue;
+            }
+            result.add(new DefaultArtifact(dep.getGroupId(), dep.getArtifactId(), version, dep.getScope(), "pom", null, new DefaultArtifactHandler("pom")));
         }
         return result;
     }
