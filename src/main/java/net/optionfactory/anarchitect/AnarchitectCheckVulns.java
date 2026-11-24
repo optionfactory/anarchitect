@@ -42,11 +42,11 @@ public class AnarchitectCheckVulns extends AbstractMojo {
                     .map(p -> p.getGroupId() + ":" + p.getArtifactId())
                     .collect(Collectors.toSet());
 
-            final var projectDependencies = new HashMap<String, Map<ArtifactInfo, List<String>>>();
+            final var projectDependencies = new HashMap<String, Map<ArtifactInfo, Resolved>>();
 
             for (final MavenProject project : reactorProjects) {
                 final var projectCoords = "%s:%s".formatted(project.getGroupId(), project.getArtifactId());
-                final var dependencies = new HashMap<ArtifactInfo, List<String>>();
+                final var dependencies = new HashMap<ArtifactInfo, Resolved>();
 
                 for (final var artifact : project.getArtifacts()) {
                     if (reactorKeys.contains(artifact.getGroupId() + ":" + artifact.getArtifactId())) {
@@ -55,7 +55,7 @@ public class AnarchitectCheckVulns extends AbstractMojo {
                     if (artifact.getVersion() != null) {
                         final var info = new ArtifactInfo(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
                         final var trail = artifact.getDependencyTrail() != null ? artifact.getDependencyTrail() : List.<String>of();
-                        dependencies.put(info, trail);
+                        dependencies.put(info, new Resolved(artifact.getScope(), trail));
                     }
                 }
                 projectDependencies.put(projectCoords, dependencies);
@@ -92,19 +92,19 @@ public class AnarchitectCheckVulns extends AbstractMojo {
 
                     for (final var dep : vulnerableInModule) {
                         final var vulnIds = vulnMap.get(dep);
-                        final var trail = moduleDeps.get(dep);
+                        final var resolved = moduleDeps.get(dep);
 
                         for (final var vulnId : vulnIds) {
-                            reports.add(new VulnerabilityReport(projectCoords, dep.coords(), dep.version(), vulnId, trail));
+                            reports.add(new VulnerabilityReport(projectCoords, dep.coords(), dep.version(), vulnId, resolved.trail(), resolved.scope()));
                             getLog().warn(MessageUtils.buffer()
                                     .failure("[VULN] ")
                                     .strong(dep.coords())
                                     .a(":")
                                     .warning(dep.version())
-                                    .a(" ")
+                                    .a(" (" + resolved.scope() + ") ")
                                     .failure(vulnId)
                                     .build());
-                            for(var t : trail){
+                            for(var t : resolved.trail()){
                                 getLog().warn(MessageUtils.buffer().warning("      [TRAIL] ").strong(t).build());
                             }
                         }
@@ -117,7 +117,7 @@ public class AnarchitectCheckVulns extends AbstractMojo {
             Reports.write(mapper, reports, outputFile.toPath());
             final var audited = projectDependencies.entrySet().stream()
                     .flatMap(module -> module.getValue().entrySet().stream()
-                            .map(dep -> new AuditedDependency(module.getKey(), dep.getKey().coords(), dep.getKey().version(), dep.getValue())))
+                            .map(dep -> new AuditedDependency(module.getKey(), dep.getKey().coords(), dep.getKey().version(), dep.getValue().trail(), dep.getValue().scope())))
                     .sorted(Comparator.comparing(AuditedDependency::project).thenComparing(AuditedDependency::artifact))
                     .toList();
             Reports.write(mapper, audited, new File(targetDir, "anarchitect-dependencies.json").toPath());
@@ -132,11 +132,16 @@ public class AnarchitectCheckVulns extends AbstractMojo {
         }
     }
 
-    public record VulnerabilityReport(String project, String artifact, String version, String vuln_id, List<String> trail) {
+    /// How a module resolves a dependency: its Maven scope (`compile`, `runtime`, `provided`, `test`, `system`), which
+    /// tells what ships with the module from what only builds or tests it, and the trail that brings it in.
+    private record Resolved(String scope, List<String> trail) {
+    }
+
+    public record VulnerabilityReport(String project, String artifact, String version, String vuln_id, List<String> trail, String scope) {
     }
 
     /// Every dependency the audit queried OSV for, so that a later check against OSV can be made without resolving the
     /// project again.
-    public record AuditedDependency(String project, String artifact, String version, List<String> trail) {
+    public record AuditedDependency(String project, String artifact, String version, List<String> trail, String scope) {
     }
 }

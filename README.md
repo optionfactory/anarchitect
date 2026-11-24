@@ -43,12 +43,15 @@ reported per module with the CVE identifiers, together with the dependency *trai
 the decisive information for deciding whether to exclude, bump or override it.
 
 A consolidated `anarchitect-vulnerabilities.json` is exported to the top-level
-`target/`, one entry per (module, artifact, CVE) with its trail. Note that this is a
+`target/`, one entry per (module, artifact, CVE) with its trail and its Maven `scope`
+(`compile`, `runtime`, `provided`, `test`, `system`): the goal resolves the test
+classpath too, and the scope tells a vulnerability in what ships with the module from
+one in what only builds or tests it. Note that this is a
 *SAST-adjacent* report: it tells you what is on your classpath and vulnerable, not
 whether your code exercises the vulnerable paths.
 
 Next to it, `anarchitect-dependencies.json` lists every artifact the goal queried, one
-entry per (module, artifact) with its version and trail, so that a later check against
+entry per (module, artifact) with its version, trail and scope, so that a later check against
 OSV (new advisories for the same dependencies) can be made without resolving the
 project again.
 
